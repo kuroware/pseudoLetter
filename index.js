@@ -180,17 +180,12 @@ function init() {
 }
 
 init();
-// trainingExamples = [2, 5, 2, 1, 23, 5, 2, 1, 0, 4, 2, 3, 5, 1, 11, 23, 6, 1, 5, 1, 19, 16, 1, 4, 2, 3, 6, 2, 3];
-// for (let i =0; i < 20; i++) {
-// 	M();
-// }
-// console.log(model);
-// console.log(priorMultinomial);
 var i = 0;
 //For the actual site
 let predictedLetter = null;
 let predictedCorrect = 0;
 let totalPredictions = 0;
+let previousAccuracy = 0;
 window.onkeydown = function(event) {
 	console.log(event);
 	let keyValue = event.key.charCodeAt(0) - "a".charCodeAt(0);
@@ -198,17 +193,27 @@ window.onkeydown = function(event) {
 		//Accumulate some training examples
 		trainingExamples.push(keyValue);
 
-		//Check to see if we were right
-		if (predictedLetter != null && predictedLetter == keyValue) {
-			predictedCorrect += 1;
-		}
-
-		//Log the predictions
-		let predictionSummary = document.createElement("div");
-		predictionSummary.innerHTML = "Predicted " + String.fromCharCode(predictedLetter + "a".charCodeAt(0)) + " and read " + String.fromCharCode(keyValue + "a".charCodeAt(0));
-		document.getElementById("predictions").appendChild(predictionSummary);
-
 		if (trainingExamples.length > 15) {
+			//Check to see if we were right
+
+			let predColor = 'red';
+			if (predictedLetter != null && predictedLetter == keyValue) {
+				predictedCorrect += 1;
+				predColor = 'green';
+			}
+
+			//Log the predictions
+			let predictionSummary = document.createElement("div");
+			predictionSummary.style.textAlign = 'center';
+			predictionSummary.style.color = predColor;
+			predictionSummary.style.marginBottom = '1px';
+			predictionSummary.innerHTML = "Predicted " + String.fromCharCode(predictedLetter + "a".charCodeAt(0)) + " and read " + String.fromCharCode(keyValue + "a".charCodeAt(0));
+			document.getElementById("predictions").appendChild(predictionSummary);
+
+			if (document.getElementById("predictions").childNodes.length > 10) {
+				document.getElementById("predictions").removeChild(document.getElementById("predictions").childNodes[0]);
+			}
+
 			//Run the M-step every so often
 			if (i == 0) {
 				for (let k = 0; k < 20; k++) {
@@ -221,10 +226,13 @@ window.onkeydown = function(event) {
 			predictedLetter = predictive();
 			totalPredictions++;
 
+			let color = (predictedCorrect/totalPredictions) > previousAccuracy ? 'green' : 'red';
+			previousAccuracy = predictedCorrect/totalPredictions;
 			console.log(String.fromCharCode(predictedLetter + "a".charCodeAt(0)));
 			document.getElementById("predicted-correct").innerHTML = predictedCorrect;
 			document.getElementById("total-predictions").innerHTML = totalPredictions;
-			document.getElementById("accuracy").innerHTML = predictedCorrect/totalPredictions;
+			document.getElementById("accuracy").innerHTML = (predictedCorrect/totalPredictions * 100).toFixed(2) + "%";
+			document.getElementById("accuracy").style.color = color;
 			document.getElementById("stats").style.display = "block";
 		}
 
