@@ -1,13 +1,25 @@
 //Some constants
 const mixtures = 5;
 var priorDistribution;
-var priorMultinomial;
+var priorMultinomial = [];
 
 var model = {}; //To store model information
 
 let trainingExamples = []; //Examples seen so far
 const contextLength = 20; //Memoryless afterwards
 const updateEvery = 5; //Update model every 5 key downs
+
+
+//HACKY way to get a quick renormalize function
+Array.prototype.normalize = function() {
+	let normalizeConstant =  this.reduce(function(element, currentSum) {
+		return currentSum + element;
+	}, 0);
+
+	for (let i = 0; i < this.length; i++) {
+		this[i] /= normalizeConstant;
+	}
+}
 
 /**
 A few probability distribution definitions
@@ -101,52 +113,120 @@ function M() {
 			}
 			model[i].params[j] = update*freq;
 		}
-		//Renormalize
-		let normalizationSum = model[i].params.reduce(function(element, currentSum) {
-			return currentSum + element;
-		}, 0);
-		model[i].params = model[i].params.map(function(element) {
-			return element/normalizationSum;
-		});
+		// //Renormalize
+		model[i].params.normalize();	
 	}
+}
+
+//Compute the predictive distribution implicitly and samples
+// sum of p(z|X)(x'|z, X) - X is a set of observations
+function predictive() {
+	//Sample from mixtures - sample a mixture probability from the conditionals
+	let conditionalMixtures = [];
+	for (let k = 0; k < mixtures; k++) {
+		//p(z|X) = p(z)p(X|z = k)
+		let p_X_given_z = 0;
+		for (let i = 0; i < trainingExamples.length; i++) {
+			p_X_given_z += Math.log(model[k+1].p(trainingExamples[i]));
+		}
+		let p_z_given_X = Math.log(priorMultinomial[k]) + p_X_given_z;
+		conditionalMixtures.push(Math.exp(p_z_given_X));
+	}
+	conditionalMixtures.normalize();
+	console.log(conditionalMixtures);
+
+	//Sample from this distribution
+	let x = Math.random();
+	let curSum = 0;
+	let samplingOutcome = 1;
+	for (let i = 0; i < conditionalMixtures.length; i++) {
+		curSum += conditionalMixtures[i];
+		if (curSum > x) {
+			samplingOutcome = i + 1;
+			break;
+		}
+	}
+	//Sample from the multinomial 
+	x = Math.random();
+	curSum = 0;
+	samplingLetterOutcome = 0;
+	for (let i = 0; i < model[samplingOutcome].params.length; i++) {
+		curSum += model[samplingOutcome].params[i];
+		if (curSum > x) {
+			samplingLetterOutcome = i;
+			break;
+		}
+	}
+	return samplingLetterOutcome;
 }
 
 function init() {
 	//Set up prior distribution
 
 	priorDistribution = new DirichletDistribution([0.2, 0.2, 0.2, 0.2, 0.2]);
-	priorMultinomial = [0.18, 0.28, 0.36, 0.15, 0.11];
+	for (let i = 0; i < mixtures; i++) {
+		priorMultinomial.push(Math.random());
+	}
+	priorMultinomial.normalize();
 
 	//Set up my distributions in the model
 	for (let i = 1; i <= mixtures; i++) {
 		let vectorProbabilities = []
 		for (let j = 0; j < 26; j++) {
-			vectorProbabilities[j] = 1/26; //By default
+			vectorProbabilities[j] = Math.random(); //By default
 		}
 		model[i] = new MultinomialDistribution(vectorProbabilities);
 	}
 }
 
 init();
-trainingExamples = [2, 5, 2];
-for (let i =0; i < 20; i++) {
-	M();
-}
-console.log(priorMultinomial)
-// // var i = 0;
-// // //For the actual site
-// // window.onkeydown = function(event) {
-// // 	console.log(event);
-// // 	let keyValue = event.key.charCodeAt(0) - "a".charCodeAt(0);
-// // 	if (keyValue >= 0 && keyValue <= 25) {
-// // 		trainingExamples.push(keyValue);
-// // 		//Run the M-step every so often
-// // 		if (i == 0) {
-// // 			for (let k = 0; k < 20; k++) {
-// // 				M();
-// // 			}
-// // 			console.log(priorMultinomial);
-// // 		}
-// // 		i = (i+1)%updateEvery;
-// // 	}
+// trainingExamples = [2, 5, 2, 1, 23, 5, 2, 1, 0, 4, 2, 3, 5, 1, 11, 23, 6, 1, 5, 1, 19, 16, 1, 4, 2, 3, 6, 2, 3];
+// for (let i =0; i < 20; i++) {
+// 	M();
 // }
+// console.log(model);
+// console.log(priorMultinomial);
+var i = 0;
+//For the actual site
+let predictedLetter = null;
+let predictedCorrect = 0;
+let totalPredictions = 0;
+window.onkeydown = function(event) {
+	console.log(event);
+	let keyValue = event.key.charCodeAt(0) - "a".charCodeAt(0);
+	if (keyValue >= 0 && keyValue <= 25) {
+		//Accumulate some training examples
+		trainingExamples.push(keyValue);
+
+		//Check to see if we were right
+		if (predictedLetter != null && predictedLetter == keyValue) {
+			predictedCorrect += 1;
+		}
+
+		//Log the predictions
+		let predictionSummary = document.createElement("div");
+		predictionSummary.innerHTML = "Predicted " + String.fromCharCode(predictedLetter + "a".charCodeAt(0)) + " and read " + String.fromCharCode(keyValue + "a".charCodeAt(0));
+		document.getElementById("predictions").appendChild(predictionSummary);
+
+		if (trainingExamples.length > 15) {
+			//Run the M-step every so often
+			if (i == 0) {
+				for (let k = 0; k < 20; k++) {
+					M();
+				}
+				console.log(priorMultinomial);
+			}
+			i = (i+1)%updateEvery;
+			//Calculate predictive
+			predictedLetter = predictive();
+			totalPredictions++;
+
+			console.log(String.fromCharCode(predictedLetter + "a".charCodeAt(0)));
+			document.getElementById("predicted-correct").innerHTML = predictedCorrect;
+			document.getElementById("total-predictions").innerHTML = totalPredictions;
+			document.getElementById("accuracy").innerHTML = predictedCorrect/totalPredictions;
+			document.getElementById("stats").style.display = "block";
+		}
+
+	}
+}
